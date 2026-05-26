@@ -221,6 +221,15 @@ public:
         }
     }
 
+    void release_mmap_page_cache() {
+        LOG_DEBUG("releasing page cache for %zu mmap'd files", mmap_tensor_store.size());
+        for (auto& store : mmap_tensor_store) {
+            if (store.mmapped) {
+                store.mmapped->release_page_cache();
+            }
+        }
+    }
+
     bool init(const sd_ctx_params_t* sd_ctx_params) {
         n_threads               = sd_ctx_params->n_threads;
         vae_decode_only         = sd_ctx_params->vae_decode_only;
@@ -4440,6 +4449,10 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
 
     int64_t t1 = ggml_time_ms();
     LOG_INFO("generate_image completed in %.2fs", (t1 - t0) * 1.0f / 1000);
+    // Release mmap page cache for disk offload
+    if (!sd_ctx->sd->mmap_tensor_store.empty()) {
+        sd_ctx->sd->release_mmap_page_cache();
+    }
     return result;
 }
 
@@ -5362,6 +5375,10 @@ SD_API bool generate_video(sd_ctx_t* sd_ctx,
 
     int64_t t1 = ggml_time_ms();
     LOG_INFO("generate_video completed in %.2fs", (t1 - t0) * 1.0f / 1000);
+    // Release mmap page cache for disk offload
+    if (!sd_ctx->sd->mmap_tensor_store.empty()) {
+        sd_ctx->sd->release_mmap_page_cache();
+    }
     if (frames_out != nullptr) {
         *frames_out = result;
     }

@@ -233,6 +233,14 @@ public:
         close(fd_);
     }
 
+    void release_page_cache() override {
+#ifdef __linux__
+        madvise(data_, size_, MADV_DONTNEED);
+        madvise(data_, size_, MADV_PAGEOUT);
+        posix_fadvise(fd_, 0, 0, POSIX_FADV_DONTNEED);
+#endif
+    }
+
 private:
     int fd_;
 };

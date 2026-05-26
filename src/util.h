@@ -56,6 +56,7 @@ public:
     uint8_t* writable_data() { return static_cast<uint8_t*>(data_); }
     size_t size() const { return size_; }
     bool copy_data(void* buf, size_t n, size_t offset) const;
+    virtual void release_page_cache() {}
 
 protected:
     MmapWrapper(void* data, size_t size)
