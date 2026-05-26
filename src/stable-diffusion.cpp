@@ -152,8 +152,10 @@ public:
     bool apply_lora_immediately = false;
 
     std::string taesd_path;
+    std::string vae_path;
     sd_tiling_params_t vae_tiling_params = {false, false, 0, 0, 0.5f, 0, 0, nullptr};
     bool offload_params_to_cpu           = false;
+    bool offload_params_to_disk          = false;
     float max_vram                       = 0.f;
     bool use_pmid                        = false;
     std::string backend_spec;
@@ -230,11 +232,22 @@ public:
         }
     }
 
+    void release_mmap_page_cache_for(const std::string& file_path) {
+        for (auto& store : mmap_tensor_store) {
+            if (store.path == file_path && store.mmapped) {
+                LOG_DEBUG("releasing page cache for '%s'", file_path.c_str());
+                store.mmapped->release_page_cache();
+                break;
+            }
+        }
+    }
+
     bool init(const sd_ctx_params_t* sd_ctx_params) {
         n_threads               = sd_ctx_params->n_threads;
         vae_decode_only         = sd_ctx_params->vae_decode_only;
         free_params_immediately = sd_ctx_params->free_params_immediately;
         offload_params_to_cpu   = sd_ctx_params->offload_params_to_cpu;
+        offload_params_to_disk  = sd_ctx_params->offload_params_to_disk;
         max_vram                = sd_ctx_params->max_vram;
         backend_spec            = SAFE_STR(sd_ctx_params->backend);
         params_backend_spec     = SAFE_STR(sd_ctx_params->params_backend);
@@ -328,6 +341,7 @@ public:
 
         if (strlen(SAFE_STR(sd_ctx_params->vae_path)) > 0) {
             LOG_INFO("loading vae from '%s'", sd_ctx_params->vae_path);
+            vae_path = SAFE_STR(sd_ctx_params->vae_path);
             if (!model_loader.init_from_file(sd_ctx_params->vae_path, "vae.")) {
                 LOG_WARN("loading vae from '%s' failed", sd_ctx_params->vae_path);
                 external_vae_is_invalid = true;
@@ -4244,6 +4258,11 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
         return nullptr;
     }
     ImageGenerationLatents latents = std::move(*latents_opt);
+
+    // Release VAE page cache after encoding (img2img/inpaint) so RAM is freed during diffusion
+    if (sd_ctx->sd->offload_params_to_disk && !sd_ctx->sd->vae_path.empty()) {
+        sd_ctx->sd->release_mmap_page_cache_for(sd_ctx->sd->vae_path);
+    }
 
     auto embeds_opt = prepare_image_generation_embeds(sd_ctx,
                                                       sd_img_gen_params,

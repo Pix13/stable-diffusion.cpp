@@ -224,6 +224,7 @@ struct ModelFileData {
 };
 
 struct MmapTensorStore {
+    std::string path;
     std::shared_ptr<MmapWrapper> mmapped;
     std::shared_ptr<struct ggml_backend_buffer> mmbuffer;
 };

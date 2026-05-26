@@ -889,7 +889,7 @@ std::vector<MmapTensorStore> ModelLoader::mmap_tensors(std::map<std::string, ggm
         if (file_mapped_bytes > 0) {
             mapped_tensors += file_mapped_tensors;
             mapped_bytes += file_mapped_bytes;
-            result.push_back({fdata.mmapped, fdata.mmbuffer});
+            result.push_back({fdata.path, fdata.mmapped, fdata.mmbuffer});
         }
     }
 
