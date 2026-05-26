@@ -457,7 +457,8 @@ SDVersion ModelLoader::get_sd_version() {
         if (tensor_storage.name.find("model.diffusion_model.double_blocks.0.img_mlp.gate_proj.weight") != std::string::npos) {
             return VERSION_OVIS_IMAGE;
         }
-        if (tensor_storage.name.find("model.diffusion_model.cap_embedder.0.weight") != std::string::npos) {
+        if (tensor_storage.name.find("model.diffusion_model.cap_embedder.0.weight") != std::string::npos ||
+            tensor_storage.name == "cap_embedder.0.weight") {
             return VERSION_Z_IMAGE;
         }
         if (tensor_storage.name.find("model.diffusion_model.layers.0.adaLN_sa_ln.weight") != std::string::npos) {

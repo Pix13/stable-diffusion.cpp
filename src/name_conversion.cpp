@@ -1164,6 +1164,29 @@ std::string convert_tensor_name(std::string name, SDVersion version) {
         }
     }
 
+    // Z-Image: add model.diffusion_model. prefix for unprefixed diffusion model tensors
+    {
+        if (sd_version_is_z_image(version)) {
+            std::vector<std::string> z_image_diffusion_prefixes = {
+                "cap_embedder.",
+                "x_embedder.",
+                "t_embedder.",
+                "context_refiner.",
+                "noise_refiner.",
+                "layers.",
+                "final_layer.",
+                "cap_pad_token",
+                "x_pad_token",
+            };
+            for (const auto& p : z_image_diffusion_prefixes) {
+                if (starts_with(name, p) && !starts_with(name, "model.diffusion_model.")) {
+                    name = "model.diffusion_model." + name;
+                    break;
+                }
+            }
+        }
+    }
+
     if (is_lora) {
         name = "lora." + name;
     }

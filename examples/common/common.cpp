@@ -431,6 +431,10 @@ ArgOptions SDContextParams::get_options() {
          "whether to memory-map model",
          true, &enable_mmap},
         {"",
+         "--offload-to-disk",
+         "keep model weights disk/mmap-backed and load to the active backend only when needed",
+         true, &offload_params_to_disk},
+        {"",
          "--control-net-cpu",
          "keep controlnet in cpu (for low vram)",
          true, &control_net_cpu},
@@ -621,6 +625,11 @@ bool SDContextParams::resolve(SDMode mode) {
         n_threads = sd_get_num_physical_cores();
     }
 
+    if (offload_params_to_disk) {
+        enable_mmap           = true;
+        offload_params_to_cpu = true;
+    }
+
     build_embedding_map();
 
     return true;
@@ -697,6 +706,7 @@ std::string SDContextParams::to_string() const {
         << "  backend: \"" << backend << "\",\n"
         << "  params_backend: \"" << params_backend << "\",\n"
         << "  enable_mmap: " << (enable_mmap ? "true" : "false") << ",\n"
+        << "  offload_params_to_disk: " << (offload_params_to_disk ? "true" : "false") << ",\n"
         << "  control_net_cpu: " << (control_net_cpu ? "true" : "false") << ",\n"
         << "  clip_on_cpu: " << (clip_on_cpu ? "true" : "false") << ",\n"
         << "  vae_on_cpu: " << (vae_on_cpu ? "true" : "false") << ",\n"
@@ -775,6 +785,7 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
         max_vram,
         backend.c_str(),
         params_backend.c_str(),
+        offload_params_to_disk,
     };
     return sd_ctx_params;
 }

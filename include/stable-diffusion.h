@@ -215,6 +215,7 @@ typedef struct {
     float max_vram;  // GiB budget for graph-cut segmented param offload (0 = disabled, -1 = auto free VRAM minus 1 GiB)
     const char* backend;
     const char* params_backend;
+    bool offload_params_to_disk;  // keep weights disk/mmap-backed, load to backend only when needed
 } sd_ctx_params_t;
 
 typedef struct {
