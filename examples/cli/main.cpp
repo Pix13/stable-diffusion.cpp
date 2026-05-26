@@ -777,10 +777,19 @@ int main(int argc, const char* argv[]) {
         if (cli_params.mode == IMG_GEN) {
             sd_img_gen_params_t img_gen_params = gen_params.to_sd_img_gen_params_t();
 
+            // Auto-enable VAE tiling when disk offload is active to avoid OOM on large images
+            if (ctx_params.offload_params_to_disk && !img_gen_params.vae_tiling_params.enabled) {
+                img_gen_params.vae_tiling_params.enabled = true;
+            }
+
             num_results = gen_params.batch_count;
             results.adopt(generate_image(sd_ctx.get(), &img_gen_params), num_results);
         } else if (cli_params.mode == VID_GEN) {
             sd_vid_gen_params_t vid_gen_params = gen_params.to_sd_vid_gen_params_t();
+            // Auto-enable VAE tiling when disk offload is active to avoid OOM on large images
+            if (ctx_params.offload_params_to_disk && !vid_gen_params.vae_tiling_params.enabled) {
+                vid_gen_params.vae_tiling_params.enabled = true;
+            }
             sd_image_t* generated_video        = nullptr;
             if (!generate_video(sd_ctx.get(), &vid_gen_params, &generated_video, &num_results, &generated_audio)) {
                 generated_video = nullptr;

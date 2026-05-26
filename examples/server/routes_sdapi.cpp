@@ -287,6 +287,10 @@ void register_sdapi_endpoints(httplib::Server& svr, ServerRuntime& rt) {
             LOG_DEBUG("%s\n", request.gen_params.to_string().c_str());
 
             sd_img_gen_params_t img_gen_params = request.to_sd_img_gen_params_t();
+            // Auto-enable VAE tiling when disk offload is active to avoid OOM on large images
+            if (runtime->ctx_params->offload_params_to_disk && !img_gen_params.vae_tiling_params.enabled) {
+                img_gen_params.vae_tiling_params.enabled = true;
+            }
             SDImageVec results;
             int num_results = 0;
 

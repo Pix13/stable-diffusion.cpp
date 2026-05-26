@@ -153,6 +153,7 @@ public:
 
     std::string taesd_path;
     std::string vae_path;
+    std::vector<std::string> text_encoder_paths;
     sd_tiling_params_t vae_tiling_params = {false, false, 0, 0, 0.5f, 0, 0, nullptr};
     bool offload_params_to_cpu           = false;
     bool offload_params_to_disk          = false;
@@ -300,6 +301,7 @@ public:
             if (!model_loader.init_from_file(sd_ctx_params->clip_l_path, prefix)) {
                 LOG_WARN("loading clip_l from '%s' failed", sd_ctx_params->clip_l_path);
             }
+            text_encoder_paths.push_back(SAFE_STR(sd_ctx_params->clip_l_path));
         }
 
         if (strlen(SAFE_STR(sd_ctx_params->clip_g_path)) > 0) {
@@ -308,6 +310,7 @@ public:
             if (!model_loader.init_from_file(sd_ctx_params->clip_g_path, prefix)) {
                 LOG_WARN("loading clip_g from '%s' failed", sd_ctx_params->clip_g_path);
             }
+            text_encoder_paths.push_back(SAFE_STR(sd_ctx_params->clip_g_path));
         }
 
         if (strlen(SAFE_STR(sd_ctx_params->clip_vision_path)) > 0) {
@@ -323,6 +326,7 @@ public:
             if (!model_loader.init_from_file(sd_ctx_params->t5xxl_path, "text_encoders.t5xxl.transformer.")) {
                 LOG_WARN("loading t5xxl from '%s' failed", sd_ctx_params->t5xxl_path);
             }
+            text_encoder_paths.push_back(SAFE_STR(sd_ctx_params->t5xxl_path));
         }
 
         if (strlen(SAFE_STR(sd_ctx_params->llm_path)) > 0) {
@@ -330,6 +334,7 @@ public:
             if (!model_loader.init_from_file(sd_ctx_params->llm_path, "text_encoders.llm.")) {
                 LOG_WARN("loading llm from '%s' failed", sd_ctx_params->llm_path);
             }
+            text_encoder_paths.push_back(SAFE_STR(sd_ctx_params->llm_path));
         }
 
         if (strlen(SAFE_STR(sd_ctx_params->llm_vision_path)) > 0) {
@@ -337,6 +342,7 @@ public:
             if (!model_loader.init_from_file(sd_ctx_params->llm_vision_path, "text_encoders.llm.visual.")) {
                 LOG_WARN("loading llm vision from '%s' failed", sd_ctx_params->llm_vision_path);
             }
+            text_encoder_paths.push_back(SAFE_STR(sd_ctx_params->llm_vision_path));
         }
 
         if (strlen(SAFE_STR(sd_ctx_params->vae_path)) > 0) {
@@ -4273,6 +4279,13 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
         return nullptr;
     }
     ImageGenerationEmbeds embeds = std::move(*embeds_opt);
+
+    // Release text encoder page caches after conditioning so RAM is freed during diffusion
+    if (sd_ctx->sd->offload_params_to_disk) {
+        for (auto& path : sd_ctx->sd->text_encoder_paths) {
+            sd_ctx->sd->release_mmap_page_cache_for(path);
+        }
+    }
 
     std::vector<sd::Tensor<float>> final_latents;
     int64_t denoise_start = ggml_time_ms();

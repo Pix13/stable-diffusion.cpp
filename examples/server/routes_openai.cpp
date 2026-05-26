@@ -225,6 +225,10 @@ static bool execute_sync_img_gen_request(ServerRuntime& runtime,
                                          SDImageVec& results,
                                          std::string& error_message) {
     sd_img_gen_params_t img_gen_params = request.to_sd_img_gen_params_t();
+    // Auto-enable VAE tiling when disk offload is active to avoid OOM on large images
+    if (runtime.ctx_params->offload_params_to_disk && !img_gen_params.vae_tiling_params.enabled) {
+        img_gen_params.vae_tiling_params.enabled = true;
+    }
     int num_results                    = 0;
 
     {

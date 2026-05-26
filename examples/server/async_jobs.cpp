@@ -169,6 +169,11 @@ bool execute_img_gen_job(ServerRuntime& runtime,
                          std::string& error_message) {
     sd_img_gen_params_t params = job.img_gen.to_sd_img_gen_params_t();
 
+    // Auto-enable VAE tiling when disk offload is active to avoid OOM on large images
+    if (runtime.ctx_params->offload_params_to_disk && !params.vae_tiling_params.enabled) {
+        params.vae_tiling_params.enabled = true;
+    }
+
     SDImageVec results;
 
     {
