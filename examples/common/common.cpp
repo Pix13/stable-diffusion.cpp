@@ -51,6 +51,16 @@ static sd_vae_format_t str_to_vae_format(const std::string& value) {
     return SD_VAE_FORMAT_COUNT;
 }
 
+static sd_weight_stream_source_t str_to_weight_stream_source(const std::string& value) {
+    if (value == "cpu") {
+        return SD_WEIGHT_STREAM_SOURCE_CPU;
+    }
+    if (value == "nvme") {
+        return SD_WEIGHT_STREAM_SOURCE_NVME;
+    }
+    return SD_WEIGHT_STREAM_SOURCE_AUTO;
+}
+
 #if defined(_WIN32)
 static std::string utf16_to_utf8(const std::wstring& wstr) {
     if (wstr.empty())
@@ -506,6 +516,10 @@ ArgOptions SDContextParams::get_options() {
          "--chroma-enable-t5-mask",
          "enable t5 mask for chroma",
          true, &chroma_use_t5_mask},
+        {"",
+         "--strict-direct-weights",
+         "enforce strict NVMe-to-VRAM weight streaming with no host-RAM payload staging (requires --stream-layers and -DSD_CUDA_GDS=ON)",
+         true, &strict_direct_weights},
     };
 
     auto on_type_arg = [&](int argc, const char** argv, int index) {
@@ -744,7 +758,12 @@ std::string SDContextParams::to_string() const {
         << "  chroma_t5_mask_pad: " << chroma_t5_mask_pad << ",\n"
         << "  prediction: " << sd_prediction_name(prediction) << ",\n"
         << "  lora_apply_mode: " << sd_lora_apply_mode_name(lora_apply_mode) << ",\n"
-        << "  force_sdxl_vae_conv_scale: " << (force_sdxl_vae_conv_scale ? "true" : "false") << "\n"
+        << "  force_sdxl_vae_conv_scale: " << (force_sdxl_vae_conv_scale ? "true" : "false") << ",\n"
+        << "  weight_stream_source: \"" << weight_stream_source << "\",\n"
+        << "  strict_direct_weights: " << (strict_direct_weights ? "true" : "false") << ",\n"
+        << "  direct_weight_pack_path: \"" << direct_weight_pack_path << "\",\n"
+        << "  direct_weight_alignment: " << direct_weight_alignment << ",\n"
+        << "  direct_weight_components: \"" << direct_weight_components << "\"\n"
         << "}";
     return oss.str();
 }
@@ -808,6 +827,11 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
         stream_layers,
         backend.c_str(),
         params_backend.c_str(),
+        str_to_weight_stream_source(weight_stream_source),
+        strict_direct_weights,
+        direct_weight_pack_path.c_str(),
+        direct_weight_alignment,
+        direct_weight_components.c_str(),
     };
     return sd_ctx_params;
 }

@@ -117,6 +117,14 @@ struct SDContextParams {
     std::string backend;
     std::string params_backend;
     bool enable_mmap           = false;
+
+    // Direct weight streaming options.
+    std::string weight_stream_source   = "auto";  // cpu, nvme, auto
+    bool strict_direct_weights         = false;
+    std::string direct_weight_pack_path;
+    uint64_t direct_weight_alignment   = 4096;
+    std::string direct_weight_components;  // comma-separated: diffusion,vae,t5,clip,llm,lora,all
+
     bool control_net_cpu       = false;
     bool clip_on_cpu           = false;
     bool vae_on_cpu            = false;

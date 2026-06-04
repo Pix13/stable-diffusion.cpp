@@ -5,6 +5,9 @@
 #include "ggml_extend.hpp"
 #include "ggml_graph_cut.h"
 
+#include "model_weight_index.h"
+#include "weight_payload_source.h"
+
 #include "model.h"
 #include "rng.hpp"
 #include "rng_mt19937.hpp"
@@ -194,6 +197,13 @@ public:
     std::string backend_spec;
     std::string params_backend_spec;
 
+    // Direct weight streaming parameters.
+    sd_weight_stream_source_t weight_stream_source   = SD_WEIGHT_STREAM_SOURCE_AUTO;
+    bool strict_direct_weights                       = false;
+    std::string direct_weight_pack_path;
+    uint64_t direct_weight_alignment                 = 4096;
+    std::string direct_weight_components;
+
     bool is_using_v_parameterization     = false;
     bool is_using_edm_v_parameterization = false;
 
@@ -265,6 +275,14 @@ public:
         stream_layers           = sd_ctx_params->stream_layers;
         backend_spec            = SAFE_STR(sd_ctx_params->backend);
         params_backend_spec     = SAFE_STR(sd_ctx_params->params_backend);
+
+        // Direct weight streaming parameters.
+        weight_stream_source    = sd_ctx_params->weight_stream_source;
+        strict_direct_weights   = sd_ctx_params->strict_direct_weights;
+        direct_weight_pack_path = SAFE_STR(sd_ctx_params->direct_weight_pack_path);
+        direct_weight_alignment = sd_ctx_params->direct_weight_alignment;
+        direct_weight_components = SAFE_STR(sd_ctx_params->direct_weight_components);
+
         if (stream_layers && max_vram == 0.f) {
             LOG_WARN("--stream-layers has no effect without --max-vram set; ignoring");
             stream_layers = false;
@@ -752,6 +770,15 @@ public:
 
             diffusion_model->set_max_graph_vram_bytes(max_graph_vram_bytes);
             diffusion_model->set_stream_layers_enabled(stream_layers);
+            if (stream_layers && (weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME ||
+                                  weight_stream_source == SD_WEIGHT_STREAM_SOURCE_AUTO)) {
+                auto source = create_weight_payload_source(
+                    direct_weight_pack_path.empty() ? SAFE_STR(sd_ctx_params->diffusion_model_path) : direct_weight_pack_path,
+                    strict_direct_weights);
+                if (source) {
+                    diffusion_model->set_weight_payload_source(std::move(source));
+                }
+            }
             get_param_tensors(diffusion_model, module_can_mmap(SDBackendModule::DIFFUSION));
 
             if (sd_version_is_unet_edit(version)) {
@@ -761,6 +788,15 @@ public:
             if (high_noise_diffusion_model) {
                 high_noise_diffusion_model->set_max_graph_vram_bytes(max_graph_vram_bytes);
                 high_noise_diffusion_model->set_stream_layers_enabled(stream_layers);
+                if (stream_layers && (weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME ||
+                                      weight_stream_source == SD_WEIGHT_STREAM_SOURCE_AUTO)) {
+                    auto source = create_weight_payload_source(
+                        direct_weight_pack_path.empty() ? SAFE_STR(sd_ctx_params->high_noise_diffusion_model_path) : direct_weight_pack_path,
+                        strict_direct_weights);
+                    if (source) {
+                        high_noise_diffusion_model->set_weight_payload_source(std::move(source));
+                    }
+                }
                 get_param_tensors(high_noise_diffusion_model, module_can_mmap(SDBackendModule::DIFFUSION));
             }
 
@@ -2747,6 +2783,11 @@ void sd_ctx_params_init(sd_ctx_params_t* sd_ctx_params) {
     sd_ctx_params->vae_format              = SD_VAE_FORMAT_AUTO;
     sd_ctx_params->backend                 = nullptr;
     sd_ctx_params->params_backend          = nullptr;
+    sd_ctx_params->weight_stream_source    = SD_WEIGHT_STREAM_SOURCE_AUTO;
+    sd_ctx_params->strict_direct_weights   = false;
+    sd_ctx_params->direct_weight_pack_path = nullptr;
+    sd_ctx_params->direct_weight_alignment = 4096;
+    sd_ctx_params->direct_weight_components = nullptr;
 }
 
 char* sd_ctx_params_to_str(const sd_ctx_params_t* sd_ctx_params) {
@@ -2784,6 +2825,11 @@ char* sd_ctx_params_to_str(const sd_ctx_params_t* sd_ctx_params) {
              "stream_layers: %s\n"
              "backend: %s\n"
              "params_backend: %s\n"
+             "weight_stream_source: %d\n"
+             "strict_direct_weights: %s\n"
+             "direct_weight_pack_path: %s\n"
+             "direct_weight_alignment: %llu\n"
+             "direct_weight_components: %s\n"
              "keep_clip_on_cpu: %s\n"
              "keep_control_net_on_cpu: %s\n"
              "keep_vae_on_cpu: %s\n"
@@ -2823,8 +2869,13 @@ char* sd_ctx_params_to_str(const sd_ctx_params_t* sd_ctx_params) {
              BOOL_STR(sd_ctx_params->stream_layers),
              SAFE_STR(sd_ctx_params->backend),
              SAFE_STR(sd_ctx_params->params_backend),
-             BOOL_STR(sd_ctx_params->keep_clip_on_cpu),
-             BOOL_STR(sd_ctx_params->keep_control_net_on_cpu),
+            sd_ctx_params->weight_stream_source,
+            BOOL_STR(sd_ctx_params->strict_direct_weights),
+            SAFE_STR(sd_ctx_params->direct_weight_pack_path),
+            (unsigned long long)sd_ctx_params->direct_weight_alignment,
+            SAFE_STR(sd_ctx_params->direct_weight_components),
+            BOOL_STR(sd_ctx_params->keep_clip_on_cpu),
+            BOOL_STR(sd_ctx_params->keep_control_net_on_cpu),
              BOOL_STR(sd_ctx_params->keep_vae_on_cpu),
              BOOL_STR(sd_ctx_params->flash_attn),
              BOOL_STR(sd_ctx_params->diffusion_flash_attn),

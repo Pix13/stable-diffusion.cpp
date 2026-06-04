@@ -176,6 +176,12 @@ enum sd_vae_format_t {
     SD_VAE_FORMAT_COUNT,
 };
 
+enum sd_weight_stream_source_t {
+    SD_WEIGHT_STREAM_SOURCE_CPU = 0,
+    SD_WEIGHT_STREAM_SOURCE_NVME = 1,
+    SD_WEIGHT_STREAM_SOURCE_AUTO = 2,
+};
+
 typedef struct {
     const char* model_path;
     const char* clip_l_path;
@@ -225,6 +231,13 @@ typedef struct {
     bool stream_layers;  // Enable residency+prefetch streaming on top of --max-vram (no effect without --max-vram)
     const char* backend;
     const char* params_backend;
+
+    // Direct weight streaming parameters.
+    enum sd_weight_stream_source_t weight_stream_source;
+    bool strict_direct_weights;
+    const char* direct_weight_pack_path;
+    uint64_t direct_weight_alignment;
+    const char* direct_weight_components;
 } sd_ctx_params_t;
 
 typedef struct {

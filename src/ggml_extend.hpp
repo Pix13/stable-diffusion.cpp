@@ -30,6 +30,9 @@
 #include "ggml_graph_cut.h"
 #include "layer_registry.h"
 
+#include "model_weight_index.h"
+#include "weight_payload_source.h"
+
 #include "model.h"
 #include "tensor.hpp"
 
@@ -1709,6 +1712,10 @@ protected:
     size_t max_graph_vram_bytes = 0;
     bool stream_layers_enabled  = false;
 
+    // Direct weight streaming support.
+    std::unique_ptr<WeightPayloadSource> weight_payload_source_ = nullptr;
+    std::shared_ptr<ModelWeightIndex> weight_index_ = nullptr;
+
     sd::layer_registry::LayerRegistry layer_registry_;
 
     std::shared_ptr<WeightAdapter> weight_adapter = nullptr;
@@ -3173,6 +3180,14 @@ public:
 
     void set_stream_layers_enabled(bool enabled) {
         stream_layers_enabled = enabled;
+    }
+
+    void set_weight_payload_source(std::unique_ptr<WeightPayloadSource> source) {
+        weight_payload_source_ = std::move(source);
+    }
+
+    void set_weight_index(std::shared_ptr<ModelWeightIndex> index) {
+        weight_index_ = std::move(index);
     }
 
     sd::layer_registry::LayerRegistry& get_layer_registry() { return layer_registry_; }
