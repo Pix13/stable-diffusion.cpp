@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include "model_weight_index.h"
 #include "weight_span.h"
 
 static int g_failures = 0;
@@ -32,5 +33,17 @@ void test_weight_span() {
     s2.compute_aligned_io(4096);
     CHECK(s2.direct_streamable == false);   // unchanged by alignment
 }
-void test_model_weight_index() {}
+void test_model_weight_index() {
+    ModelWeightIndex idx;
+    int64_t ne[1] = {10};
+    WeightSpan a("a", "/m", 0, 40, GGML_TYPE_F32, ne, 1); a.direct_streamable = true;
+    WeightSpan b("b", "/m", 64, 40, GGML_TYPE_F32, ne, 1); b.direct_streamable = false;
+    CHECK(idx.add_span("a", a) == true);
+    CHECK(idx.add_span("a", a) == false);   // duplicate rejected
+    CHECK(idx.add_span("b", b) == true);
+    CHECK(idx.find_by_name("a") != nullptr);
+    CHECK(idx.find_by_name("missing") == nullptr);
+    CHECK(idx.all_direct_streamable() == false);  // b is not
+    CHECK(idx.size() == 2);
+}
 void test_nvme_source() {}

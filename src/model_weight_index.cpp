@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <sstream>
 
+#include "model.h"
+
 bool ModelWeightIndex::add_span(const std::string& tensor_name, WeightSpan span) {
     auto result = spans_.emplace(tensor_name, std::move(span));
     return result.second;  // true if inserted (not already present)
@@ -52,4 +54,26 @@ void ModelWeightIndex::log_direct_coverage() const {
         ss << " - some tensors require host-side conversion";
     }
     printf("%s\n", ss.str().c_str());
+}
+
+std::shared_ptr<ModelWeightIndex> build_weight_index(
+    ModelLoader& loader,
+    const std::map<std::string, ggml_tensor*>& runtime_tensors,
+    size_t alignment) {
+    auto index = std::make_shared<ModelWeightIndex>();
+    auto& storage_map = loader.get_tensor_storage_map();
+    for (const auto& [name, tensor] : runtime_tensors) {
+        auto it = storage_map.find(name);
+        if (it == storage_map.end()) {
+            continue;  // not all runtime tensors are file-backed
+        }
+        const TensorStorage& ts = it->second;
+        const std::string& path = loader.get_file_path(ts.file_index);
+        WeightSpan span(name, path, ts.offset, ggml_nbytes(tensor),
+                        tensor->type, tensor->ne, ggml_n_dims(tensor));
+        span.compute_aligned_io(alignment);
+        span.direct_streamable = (ts.type == tensor->type) && (ts.index_in_zip < 0);
+        index->add_span(name, span);
+    }
+    return index;
 }

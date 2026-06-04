@@ -274,6 +274,8 @@ public:
     std::map<ggml_type, uint32_t> get_diffusion_model_wtype_stat();
     std::map<ggml_type, uint32_t> get_vae_wtype_stat();
     String2TensorStorage& get_tensor_storage_map() { return tensor_storage_map; }
+    const std::string& get_file_path(size_t index) const { return file_paths_.at(index); }
+    size_t get_num_files() const { return file_paths_.size(); }
     void set_wtype_override(ggml_type wtype, std::string tensor_type_rules = "");
     void process_model_files(bool enable_mmap = false, bool writable_mmap = true);
     std::vector<MmapTensorStore> mmap_tensors(std::map<std::string, ggml_tensor*>& tensors,

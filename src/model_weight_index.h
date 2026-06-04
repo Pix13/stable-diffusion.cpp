@@ -2,6 +2,7 @@
 #define __SD_MODEL_WEIGHT_INDEX_H__
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -38,5 +39,14 @@ public:
 private:
     std::map<std::string, WeightSpan> spans_;
 };
+
+class ModelLoader;  // fwd
+// Build spans for the given runtime param tensors (name -> ggml_tensor*) using the
+// loader's tensor storage map. A tensor is direct_streamable only when its on-disk
+// dtype matches the runtime tensor dtype (no host-side conversion) and it is not in a zip.
+std::shared_ptr<ModelWeightIndex> build_weight_index(
+    ModelLoader& loader,
+    const std::map<std::string, struct ggml_tensor*>& runtime_tensors,
+    size_t alignment);
 
 #endif  // __SD_MODEL_WEIGHT_INDEX_H__
