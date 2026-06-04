@@ -329,6 +329,11 @@ ArgOptions SDContextParams::get_options() {
          "path to full model",
          &model_path},
         {"",
+         "--stream-source",
+         "weight stream source: cpu, nvme, or auto (default auto). nvme streams weights "
+         "from disk during generation; requires --stream-layers and --max-vram",
+         &weight_stream_source},
+        {"",
          "--clip_l",
          "path to the clip-l text encoder", &clip_l_path},
         {"", "--clip_g",

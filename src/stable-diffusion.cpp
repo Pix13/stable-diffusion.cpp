@@ -203,6 +203,11 @@ public:
     std::string direct_weight_pack_path;
     uint64_t direct_weight_alignment                 = 4096;
     std::string direct_weight_components;
+    bool diffusion_nvme_                             = false;
+
+    bool is_nvme_stream() const {
+        return stream_layers && weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME;
+    }
 
     bool is_using_v_parameterization     = false;
     bool is_using_edm_v_parameterization = false;
@@ -291,6 +296,12 @@ public:
             // Streaming needs CPU-resident params.
             LOG_WARN("--stream-layers has no effect without --offload-to-cpu (or --params-backend); ignoring");
             stream_layers = false;
+        }
+        if (weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME) {
+            if (!stream_layers || max_vram == 0.f) {
+                LOG_ERROR("--stream-source nvme requires --stream-layers and --max-vram > 0");
+                return false;
+            }
         }
 
         bool use_tae       = false;
@@ -770,16 +781,37 @@ public:
 
             diffusion_model->set_max_graph_vram_bytes(max_graph_vram_bytes);
             diffusion_model->set_stream_layers_enabled(stream_layers);
-            if (stream_layers && (weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME ||
-                                  weight_stream_source == SD_WEIGHT_STREAM_SOURCE_AUTO)) {
-                auto source = create_weight_payload_source(
-                    direct_weight_pack_path.empty() ? SAFE_STR(sd_ctx_params->diffusion_model_path) : direct_weight_pack_path,
-                    strict_direct_weights);
-                if (source) {
-                    diffusion_model->set_weight_payload_source(std::move(source));
+            if (is_nvme_stream()) {
+                // Index-only: enumerate skeleton tensors, build the offset index, attach
+                // the NVMe source; do NOT add these tensors to the global `tensors`/mmap
+                // maps (so load_tensors won't fill them) and use alloc_params_index_only
+                // instead of alloc_params_buffer (handled at the alloc site below).
+                // NOTE: `ctx` is not created until later in this method, so error
+                // returns here use a plain `return false;` (no ggml_free).
+                std::map<std::string, ggml_tensor*> dm_tensors;
+                diffusion_model->get_param_tensors(dm_tensors);
+                auto dm_index = build_weight_index(model_loader, dm_tensors, 4096);
+                dm_index->log_direct_coverage();
+                if (strict_direct_weights && !dm_index->all_direct_streamable()) {
+                    LOG_ERROR("strict direct weights: not all diffusion tensors are streamable");
+                    return false;
                 }
+                const std::string dm_path =
+                    direct_weight_pack_path.empty() ? std::string(SAFE_STR(sd_ctx_params->diffusion_model_path))
+                                                    : direct_weight_pack_path;
+                auto source = create_weight_payload_source(dm_path, strict_direct_weights);
+                if (!source || !source->open()) {
+                    LOG_ERROR("failed to open NVMe weight source for diffusion model: %s", dm_path.c_str());
+                    return false;
+                }
+                diffusion_model->set_weight_index(dm_index);
+                diffusion_model->set_weight_payload_source(std::move(source));
+                diffusion_model->set_nvme_stream_mode(true);
+                diffusion_nvme_ = true;
+                // intentionally NOT calling get_param_tensors(diffusion_model, ...)
+            } else {
+                get_param_tensors(diffusion_model, module_can_mmap(SDBackendModule::DIFFUSION));
             }
-            get_param_tensors(diffusion_model, module_can_mmap(SDBackendModule::DIFFUSION));
 
             if (sd_version_is_unet_edit(version)) {
                 vae_decode_only = false;
@@ -1083,7 +1115,13 @@ public:
             ggml_free(ctx);
             return false;
         }
-        if (diffusion_model && !diffusion_model->alloc_params_buffer()) {
+        if (diffusion_model && diffusion_nvme_) {
+            if (!diffusion_model->alloc_params_index_only()) {
+                LOG_ERROR("Diffusion model index-only allocation failed");
+                ggml_free(ctx);
+                return false;
+            }
+        } else if (diffusion_model && !diffusion_model->alloc_params_buffer()) {
             LOG_ERROR("Diffusion model params buffer allocation failed");
             ggml_free(ctx);
             return false;
