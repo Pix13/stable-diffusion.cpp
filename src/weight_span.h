@@ -71,7 +71,6 @@ struct WeightSpan {
         uint64_t unaligned_read_bytes = payload_bytes + payload_offset_inside_aligned_read;
         aligned_read_bytes = ((unaligned_read_bytes + alignment - 1) / alignment) * alignment;
 
-        direct_streamable = true;
         return true;
     }
 
