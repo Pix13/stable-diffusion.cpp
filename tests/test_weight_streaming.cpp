@@ -2,6 +2,9 @@
 #include <cstdlib>
 #include "model_weight_index.h"
 #include "weight_span.h"
+#include "weight_payload_source.h"
+#include "ggml-backend.h"
+#include "ggml-cpu.h"
 
 static int g_failures = 0;
 #define CHECK(cond) do { \
@@ -46,4 +49,42 @@ void test_model_weight_index() {
     CHECK(idx.all_direct_streamable() == false);  // b is not
     CHECK(idx.size() == 2);
 }
-void test_nvme_source() {}
+void test_nvme_source() {
+    const char* path = "/tmp/sd_nvme_test.bin";
+    const int N = 256;
+    float data[N];
+    for (int i = 0; i < N; ++i) data[i] = (float)i * 1.5f;
+    FILE* f = fopen(path, "wb");
+    CHECK(f != nullptr);
+    char pad[100] = {0};
+    fwrite(pad, 1, sizeof(pad), f);          // 100-byte prefix -> unaligned offset
+    fwrite(data, sizeof(float), N, f);
+    fclose(f);
+
+    int64_t ne[1] = {N};
+    WeightSpan span("w", path, /*offset*/ 100, /*bytes*/ N * sizeof(float),
+                    GGML_TYPE_F32, ne, 1);
+    span.compute_aligned_io(4096);
+
+    ggml_init_params ip{ ggml_tensor_overhead() + 1024, nullptr, true };
+    ggml_context* ctx = ggml_init(ip);
+    ggml_tensor* t = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, N);
+    ggml_backend_t cpu = ggml_backend_cpu_init();
+    ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(ctx, cpu);
+    CHECK(buf != nullptr);
+
+    auto src = create_weight_payload_source(path, false);
+    CHECK(src->open() == true);
+    CHECK(src->read_to_tensor(span, t) == true);
+
+    float out[N];
+    ggml_backend_tensor_get(t, out, 0, sizeof(out));
+    bool ok = true;
+    for (int i = 0; i < N; ++i) if (out[i] != data[i]) ok = false;
+    CHECK(ok);
+
+    src->close();
+    ggml_backend_buffer_free(buf);
+    ggml_backend_free(cpu);
+    ggml_free(ctx);
+}

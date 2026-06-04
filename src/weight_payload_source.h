@@ -25,18 +25,9 @@ public:
     // Whether this source supports strict direct mode (no host-RAM staging).
     virtual bool supports_strict_direct() const = 0;
 
-    // Read a tensor payload directly into a device buffer.
-    //   span             - the WeightSpan describing the on-disk range
-    //   dst_buffer       - the ggml backend buffer containing the destination
-    //   dst_device_ptr   - the device pointer within dst_buffer
-    //   dst_offset       - byte offset within dst_device_ptr
-    //   backend_stream   - optional backend stream (nullptr for synchronous)
-    // Returns true on success.
-    virtual bool read_to_device(const WeightSpan& span,
-                                ggml_backend_buffer_t dst_buffer,
-                                void* dst_device_ptr,
-                                size_t dst_offset,
-                                void* backend_stream_or_null) = 0;
+    // Read the tensor payload from storage and upload into dst's backend buffer.
+    // Uses only a bounded, reusable host staging buffer; never a full-model copy.
+    virtual bool read_to_tensor(const WeightSpan& span, struct ggml_tensor* dst) = 0;
 
     // Close the source and release resources.
     virtual void close() = 0;

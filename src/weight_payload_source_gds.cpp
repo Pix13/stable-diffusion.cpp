@@ -158,17 +158,19 @@ void CudaGdsWeightSource::deregister_all_buffers() {
     registered_buffers_.clear();
 }
 
-bool CudaGdsWeightSource::read_to_device(const WeightSpan& span,
-                                         ggml_backend_buffer_t /*dst_buffer*/,
-                                         void* dst_device_ptr,
-                                         size_t dst_offset,
-                                         void* /*backend_stream_or_null*/) {
+// NOTE: GDS path is unverified (no hardware) and out of test scope.
+// Derives the device destination from dst->data (offset 0) and keeps the
+// existing cuFile read logic targeting that pointer.
+bool CudaGdsWeightSource::read_to_tensor(const WeightSpan& span, ggml_tensor* dst) {
     if (!fn_cuFileRead || !cufile_handle_ || fd_ < 0) {
         fprintf(stderr, "CudaGdsWeightSource: not initialized\n");
         return false;
     }
 
     CUfileHandle_t* handle = static_cast<CUfileHandle_t*>(cufile_handle_);
+
+    void*  dst_device_ptr = dst->data;
+    size_t dst_offset     = 0;
 
     // Use the aligned read range if available, otherwise fall back to the exact
     // offset/size. dst_device_ptr must be the base pointer registered with
@@ -199,8 +201,7 @@ bool CudaGdsWeightSource::read_to_device(const WeightSpan& span,
     }
 
     // If the payload starts inside the aligned read range, the caller is
-    // responsible for accounting payload_offset_inside_aligned_read when
-    // binding the tensor to the device pointer; no host buffer is used here.
+    // responsible for accounting payload_offset_inside_aligned_read.
     return true;
 }
 

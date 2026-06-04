@@ -20,11 +20,8 @@ public:
 
     bool open() override;
     bool supports_strict_direct() const override { return true; }
-    bool read_to_device(const WeightSpan& span,
-                        ggml_backend_buffer_t dst_buffer,
-                        void* dst_device_ptr,
-                        size_t dst_offset,
-                        void* backend_stream_or_null) override;
+    // NOTE: GDS path is unverified (no hardware) and out of test scope.
+    bool read_to_tensor(const WeightSpan& span, struct ggml_tensor* dst) override;
     void close() override;
     const std::string& path() const override { return source_path_; }
 

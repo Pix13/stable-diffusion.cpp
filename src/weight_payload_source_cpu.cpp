@@ -3,90 +3,93 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <fstream>
-#include <iostream>
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
 #include <vector>
 
 #include "ggml-backend.h"
 
-// HostRamWeightSource: reads tensor payloads from a model file into
-// host RAM, then copies to the destination GPU buffer via ggml.
-// This is the non-strict path (payload bytes pass through host RAM).
-class HostRamWeightSource : public WeightPayloadSource {
+// Reads tensor payloads from a file into a reusable aligned host staging buffer,
+// then uploads to the destination tensor's backend buffer via ggml_backend_tensor_set.
+// Bounded host memory: the staging buffer grows to the largest aligned read, never
+// the whole model. Tries O_DIRECT (page-cache-free); falls back to buffered reads.
+class NvmeStagedWeightSource : public WeightPayloadSource {
 public:
-    explicit HostRamWeightSource(const std::string& path)
+    explicit NvmeStagedWeightSource(const std::string& path)
         : WeightPayloadSource(path) {}
+    ~NvmeStagedWeightSource() override { close(); }
 
     bool open() override {
-        file_.open(source_path_, std::ios::binary | std::ios::ate);
-        if (!file_.is_open()) {
-            fprintf(stderr, "failed to open weight source file: %s\n", source_path_.c_str());
+        fd_ = ::open(source_path_.c_str(), O_RDONLY | O_DIRECT);
+        if (fd_ >= 0) { direct_ = true; return true; }
+        fd_ = ::open(source_path_.c_str(), O_RDONLY);
+        if (fd_ < 0) {
+            fprintf(stderr, "NvmeStagedWeightSource: cannot open '%s': %s\n",
+                    source_path_.c_str(), strerror(errno));
             return false;
         }
-        file_size_ = file_.tellg();
-        file_.seekg(0, std::ios::beg);
+        fprintf(stderr, "NvmeStagedWeightSource: O_DIRECT unavailable for '%s', "
+                "using buffered reads\n", source_path_.c_str());
         return true;
     }
 
-    bool supports_strict_direct() const override {
-        return false;  // Host RAM staging is not strict.
-    }
+    bool supports_strict_direct() const override { return false; }
 
-    bool read_to_device(const WeightSpan& span,
-                        ggml_backend_buffer_t dst_buffer,
-                        void* dst_device_ptr,
-                        size_t dst_offset,
-                        void* /*backend_stream_or_null*/) override {
-        if (!file_.is_open()) {
-            fprintf(stderr, "HostRamWeightSource: file not open\n");
+    bool read_to_tensor(const WeightSpan& span, ggml_tensor* dst) override {
+        if (fd_ < 0) { fprintf(stderr, "NvmeStagedWeightSource: not open\n"); return false; }
+        const size_t   want  = span.aligned_read_bytes ? span.aligned_read_bytes : span.payload_bytes;
+        const uint64_t off   = span.aligned_read_bytes ? span.aligned_file_offset : span.file_offset;
+        const size_t   inset = span.aligned_read_bytes ? span.payload_offset_inside_aligned_read : 0;
+        if (!ensure_buffer(want)) return false;
+
+        size_t done = 0;
+        while (done < want) {
+            ssize_t n = ::pread(fd_, buf_ + done, want - done, (off_t)(off + done));
+            if (n < 0) {
+                if (errno == EINTR) continue;
+                fprintf(stderr, "NvmeStagedWeightSource: pread '%s' failed: %s\n",
+                        span.tensor_name.c_str(), strerror(errno));
+                return false;
+            }
+            if (n == 0) break;  // EOF
+            done += (size_t)n;
+        }
+        if (done < inset + span.payload_bytes) {
+            fprintf(stderr, "NvmeStagedWeightSource: short read '%s': got %zu need %zu\n",
+                    span.tensor_name.c_str(), done, inset + (size_t)span.payload_bytes);
             return false;
         }
-
-        // Read payload bytes into a host buffer.
-        std::vector<uint8_t> buffer(span.payload_bytes);
-        file_.seekg(static_cast<std::streampos>(span.file_offset));
-        file_.read(reinterpret_cast<char*>(buffer.data()),
-                   static_cast<std::streamsize>(span.payload_bytes));
-
-        if (file_.gcount() != static_cast<std::streamsize>(span.payload_bytes)) {
-            fprintf(stderr, "HostRamWeightSource: short read for tensor '%s': "
-                    "expected %zu, got %zd\n",
-                    span.tensor_name.c_str(),
-                    span.payload_bytes,
-                    static_cast<std::streamsize>(span.payload_bytes));
-            return false;
-        }
-
-        // Copy host buffer to destination device pointer.
-        memcpy(static_cast<uint8_t*>(dst_device_ptr) + dst_offset,
-               buffer.data(), span.payload_bytes);
-
+        ggml_backend_tensor_set(dst, buf_ + inset, 0, span.payload_bytes);
         return true;
     }
 
     void close() override {
-        if (file_.is_open()) {
-            file_.close();
-        }
+        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+        if (buf_) { free(buf_); buf_ = nullptr; cap_ = 0; }
     }
-
-    const std::string& path() const override {
-        return source_path_;
-    }
+    const std::string& path() const override { return source_path_; }
 
 private:
-    std::ifstream file_;
-    std::streampos file_size_ = 0;
+    bool ensure_buffer(size_t need) {
+        if (cap_ >= need && buf_) return true;
+        free(buf_); buf_ = nullptr; cap_ = 0;
+        void* p = nullptr;
+        if (posix_memalign(&p, 4096, need) != 0 || !p) {
+            fprintf(stderr, "NvmeStagedWeightSource: staging alloc %zu failed\n", need);
+            return false;
+        }
+        buf_ = (uint8_t*)p; cap_ = need;
+        return true;
+    }
+
+    int      fd_     = -1;
+    bool     direct_ = false;
+    uint8_t* buf_    = nullptr;
+    size_t   cap_    = 0;
 };
 
-// Factory implementation (CPU-only version; GDS version overrides this
-// when SD_CUDA_GDS is enabled).
 std::unique_ptr<WeightPayloadSource> create_weight_payload_source(
-    const std::string& path, bool strict) {
-    if (strict) {
-        fprintf(stderr, "strict direct weights requested, but no GDS source "
-                "available (rebuild with -DSD_CUDA_GDS=ON).\n");
-        return nullptr;
-    }
-    return std::make_unique<HostRamWeightSource>(path);
+    const std::string& path, bool /*strict*/) {
+    return std::make_unique<NvmeStagedWeightSource>(path);
 }
