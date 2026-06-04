@@ -1715,6 +1715,8 @@ protected:
     // Direct weight streaming support.
     std::unique_ptr<WeightPayloadSource> weight_payload_source_ = nullptr;
     std::shared_ptr<ModelWeightIndex> weight_index_ = nullptr;
+    bool nvme_stream_mode_ = false;
+    ggml_backend_buffer_t index_buffer_ = nullptr;  // 0-byte marker buffer for skeleton tensors
 
     sd::layer_registry::LayerRegistry layer_registry_;
 
@@ -2107,6 +2109,19 @@ protected:
         }
     }
 
+    // Fill a GPU twin for `src` param tensor. In nvme mode, stream from storage;
+    // otherwise copy from the host-resident source tensor (existing behavior).
+    bool fill_twin(ggml_tensor* src, ggml_tensor* twin) {
+        if (nvme_stream_mode_ && weight_index_ && weight_payload_source_) {
+            const WeightSpan* span = weight_index_->find(src);
+            if (span != nullptr && span->direct_streamable) {
+                return weight_payload_source_->read_to_tensor(*span, twin);
+            }
+        }
+        ggml_backend_tensor_copy(src, twin);
+        return true;
+    }
+
     bool offload_all_params() {
         restore_partial_params();
         if (params_backend == runtime_backend) {
@@ -2141,7 +2156,7 @@ protected:
         ggml_tensor* offload_t = ggml_get_first_tensor(offload_ctx);
 
         while (t != nullptr && offload_t != nullptr) {
-            ggml_backend_tensor_copy(t, offload_t);
+            if (!fill_twin(t, offload_t)) return false;
             std::swap(t->buffer, offload_t->buffer);
             std::swap(t->data, offload_t->data);
             std::swap(t->extra, offload_t->extra);
@@ -2229,7 +2244,7 @@ protected:
             ggml_tensor* tensor         = pair.first;
             ggml_tensor* offload_tensor = pair.second;
 
-            ggml_backend_tensor_copy(tensor, offload_tensor);
+            if (!fill_twin(tensor, offload_tensor)) return false;
             std::swap(tensor->buffer, offload_tensor->buffer);
             std::swap(tensor->data, offload_tensor->data);
             std::swap(tensor->extra, offload_tensor->extra);
@@ -2363,7 +2378,7 @@ protected:
         for (auto& pair : resident_offload_pairs) {
             ggml_tensor* t    = pair.first;
             ggml_tensor* twin = pair.second;
-            ggml_backend_tensor_copy(t, twin);
+            if (!fill_twin(t, twin)) return false;
             std::swap(t->buffer, twin->buffer);
             std::swap(t->data, twin->data);
             std::swap(t->extra, twin->extra);
@@ -3022,6 +3037,29 @@ public:
         return true;
     }
 
+    bool alloc_params_index_only() {
+        size_t num_tensors = ggml_tensor_num(params_ctx);
+        if (num_tensors == 0) return true;
+        // A real (small) backend buffer to satisfy buffer!=null checks. Tensors keep
+        // data==nullptr; their payloads are streamed into GPU twins on demand.
+        index_buffer_ = ggml_backend_buft_alloc_buffer(
+            ggml_backend_get_default_buffer_type(params_backend), 0);
+        if (index_buffer_ == nullptr) {
+            LOG_ERROR("%s alloc index buffer failed", get_desc().c_str());
+            return false;
+        }
+        ggml_backend_buffer_set_usage(index_buffer_, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+        for (ggml_tensor* t = ggml_get_first_tensor(params_ctx); t != nullptr;
+             t = ggml_get_next_tensor(params_ctx, t)) {
+            t->buffer = index_buffer_;
+            t->data   = nullptr;
+        }
+        rebuild_params_tensor_set();
+        LOG_INFO("%s params index-only (%zu tensors, 0 MB resident)",
+                 get_desc().c_str(), num_tensors);
+        return true;
+    }
+
     void free_params_buffer() {
         // Restore swapped resident params before freeing their backing buffer.
         restore_resident_params();
@@ -3189,6 +3227,8 @@ public:
     void set_weight_index(std::shared_ptr<ModelWeightIndex> index) {
         weight_index_ = std::move(index);
     }
+
+    void set_nvme_stream_mode(bool on) { nvme_stream_mode_ = on; }
 
     sd::layer_registry::LayerRegistry& get_layer_registry() { return layer_registry_; }
 
