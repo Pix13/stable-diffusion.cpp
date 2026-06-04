@@ -325,3 +325,12 @@ set(SD_PUBLIC_HEADERS include/stable-diffusion.h)
 set_target_properties(${SD_LIB} PROPERTIES PUBLIC_HEADER "${SD_PUBLIC_HEADERS}")
 
 install(TARGETS ${SD_LIB} LIBRARY PUBLIC_HEADER)
+
+option(SD_BUILD_TESTS "sd: build unit tests" OFF)
+if(SD_BUILD_TESTS)
+    add_executable(sd-tests tests/test_weight_streaming.cpp)
+    target_link_libraries(sd-tests PRIVATE ${SD_LIB} ggml)
+    target_include_directories(sd-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/ggml/include)
+endif()
