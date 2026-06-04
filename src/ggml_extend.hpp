@@ -2117,6 +2117,14 @@ protected:
             if (span != nullptr && span->direct_streamable) {
                 return weight_payload_source_->read_to_tensor(*span, twin);
             }
+            // In nvme mode a skeleton param (no resident payload) MUST be
+            // streamable; copying from it would dereference a null pointer.
+            // Fail loudly instead of crashing in ggml_backend_tensor_copy.
+            if (src->data == nullptr) {
+                LOG_ERROR("%s nvme stream: tensor '%s' has no streamable span (skeleton, cannot copy)",
+                          get_desc().c_str(), src->name);
+                return false;
+            }
         }
         ggml_backend_tensor_copy(src, twin);
         return true;

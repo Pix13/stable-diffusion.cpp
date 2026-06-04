@@ -14,11 +14,19 @@
 // on-disk payload ranges without reading payload bytes into host RAM.
 class ModelWeightIndex {
 public:
-    // Register a WeightSpan for a tensor. Returns false if the name is
+    // Register a WeightSpan keyed by name only. Returns false if the name is
     // already registered.
     bool add_span(const std::string& tensor_name, WeightSpan span);
 
-    // Find the WeightSpan for a ggml tensor by its name.
+    // Register a WeightSpan and also bind it to a concrete ggml tensor pointer,
+    // so find(tensor) can resolve it directly. ggml block params are frequently
+    // not ggml_set_name'd to their full path (tensor->name may be empty or a
+    // local name), so pointer identity is the reliable key for lookup. Returns
+    // false if the name is already registered.
+    bool add_span(const std::string& tensor_name, const ggml_tensor* tensor, WeightSpan span);
+
+    // Find the WeightSpan for a ggml tensor. Resolves by pointer identity first
+    // (reliable), falling back to the tensor's name.
     const WeightSpan* find(const ggml_tensor* tensor) const;
 
     // Find the WeightSpan by exact tensor name string.
@@ -38,6 +46,9 @@ public:
 
 private:
     std::map<std::string, WeightSpan> spans_;
+    // Pointer-identity index into spans_ values (std::map nodes are stable, so
+    // pointers into them remain valid as the map grows).
+    std::map<const ggml_tensor*, const WeightSpan*> by_ptr_;
 };
 
 class ModelLoader;  // fwd

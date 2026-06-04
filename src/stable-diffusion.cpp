@@ -288,6 +288,13 @@ public:
         direct_weight_alignment = sd_ctx_params->direct_weight_alignment;
         direct_weight_components = SAFE_STR(sd_ctx_params->direct_weight_components);
 
+        // NVMe streaming engages the graph-cut offload path, which requires the params
+        // backend to differ from the runtime backend (i.e. params "on CPU"). With
+        // index-only allocation that CPU params buffer is 0 bytes, so no full-model host
+        // copy is made. Imply offload here so the user need not pass --offload-to-cpu.
+        if (weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME) {
+            offload_params_to_cpu = true;
+        }
         if (stream_layers && max_vram == 0.f) {
             LOG_WARN("--stream-layers has no effect without --max-vram set; ignoring");
             stream_layers = false;

@@ -48,6 +48,23 @@ void test_model_weight_index() {
     CHECK(idx.find_by_name("missing") == nullptr);
     CHECK(idx.all_direct_streamable() == false);  // b is not
     CHECK(idx.size() == 2);
+
+    // Pointer-keyed lookup: find(tensor) must resolve by pointer identity even
+    // when the tensor's ggml name does NOT match the registered span name
+    // (block params are typically not ggml_set_name'd to their full path).
+    ggml_init_params ip{ ggml_tensor_overhead() * 2 + 256, nullptr, true };
+    ggml_context* ctx = ggml_init(ip);
+    ggml_tensor* t = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 10);
+    // intentionally leave t->name empty / mismatched
+    int64_t ne2[1] = {10};
+    WeightSpan c("model.diffusion_model.layers.0.weight", "/m", 128, 40, GGML_TYPE_F32, ne2, 1);
+    c.direct_streamable = true;
+    CHECK(idx.add_span("model.diffusion_model.layers.0.weight", t, c) == true);
+    CHECK(idx.find(t) != nullptr);                  // resolved by pointer
+    CHECK(idx.find(t)->file_offset == 128);
+    ggml_tensor* other = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 10);
+    CHECK(idx.find(other) == nullptr);              // unregistered pointer
+    ggml_free(ctx);
 }
 void test_nvme_source() {
     const char* path = "/tmp/sd_nvme_test.bin";

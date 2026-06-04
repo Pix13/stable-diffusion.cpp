@@ -10,9 +10,21 @@ bool ModelWeightIndex::add_span(const std::string& tensor_name, WeightSpan span)
     return result.second;  // true if inserted (not already present)
 }
 
+bool ModelWeightIndex::add_span(const std::string& tensor_name, const ggml_tensor* tensor, WeightSpan span) {
+    auto result = spans_.emplace(tensor_name, std::move(span));
+    if (result.second && tensor != nullptr) {
+        by_ptr_[tensor] = &result.first->second;
+    }
+    return result.second;
+}
+
 const WeightSpan* ModelWeightIndex::find(const ggml_tensor* tensor) const {
     if (!tensor) return nullptr;
-    return find_by_name(tensor->name);
+    auto it = by_ptr_.find(tensor);
+    if (it != by_ptr_.end()) {
+        return it->second;
+    }
+    return find_by_name(tensor->name);  // fallback
 }
 
 const WeightSpan* ModelWeightIndex::find_by_name(const std::string& tensor_name) const {
@@ -73,7 +85,7 @@ std::shared_ptr<ModelWeightIndex> build_weight_index(
                         tensor->type, tensor->ne, ggml_n_dims(tensor));
         span.compute_aligned_io(alignment);
         span.direct_streamable = (ts.type == tensor->type) && (ts.index_in_zip < 0);
-        index->add_span(name, span);
+        index->add_span(name, tensor, span);
     }
     return index;
 }
