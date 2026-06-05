@@ -204,6 +204,7 @@ public:
     uint64_t direct_weight_alignment                 = 4096;
     std::string direct_weight_components;
     bool diffusion_nvme_                             = false;
+    bool te_nvme_                                    = false;
 
     bool is_nvme_stream() const {
         return stream_layers && weight_stream_source == SD_WEIGHT_STREAM_SOURCE_NVME;
@@ -784,7 +785,30 @@ public:
             }
 
             cond_stage_model->set_max_graph_vram_bytes(max_graph_vram_bytes);
-            get_param_tensors(cond_stage_model, module_can_mmap(SDBackendModule::TE));
+            if (is_nvme_stream() && cond_stage_model->supports_nvme_stream()) {
+                // Index-only NVMe streaming for the LLM text encoder (mirrors the
+                // diffusion path): build the offset index, attach the source, and
+                // skip the global tensor collection so it is not host-loaded.
+                std::map<std::string, ggml_tensor*> te_tensors;
+                cond_stage_model->get_param_tensors(te_tensors);
+                auto te_index = build_weight_index(model_loader, te_tensors, 4096);
+                te_index->log_direct_coverage();
+                if (strict_direct_weights && !te_index->all_direct_streamable()) {
+                    LOG_ERROR("strict direct weights: not all LLM tensors are streamable");
+                    return false;
+                }
+                auto source = create_weight_payload_source(SAFE_STR(sd_ctx_params->llm_path), strict_direct_weights);
+                if (!source || !source->open()) {
+                    LOG_ERROR("failed to open NVMe weight source for LLM: %s", SAFE_STR(sd_ctx_params->llm_path));
+                    return false;
+                }
+                cond_stage_model->set_weight_index(te_index);
+                cond_stage_model->set_weight_payload_source(std::move(source));
+                cond_stage_model->set_nvme_stream_mode(true);
+                te_nvme_ = true;
+            } else {
+                get_param_tensors(cond_stage_model, module_can_mmap(SDBackendModule::TE));
+            }
 
             diffusion_model->set_max_graph_vram_bytes(max_graph_vram_bytes);
             diffusion_model->set_stream_layers_enabled(stream_layers);
@@ -1117,7 +1141,13 @@ public:
             ggml_free(ctx);
             return false;
         }
-        if (cond_stage_model && !cond_stage_model->alloc_params_buffer()) {
+        if (cond_stage_model && te_nvme_) {
+            if (!cond_stage_model->alloc_params_index_only()) {
+                LOG_ERROR("Conditioner index-only allocation failed");
+                ggml_free(ctx);
+                return false;
+            }
+        } else if (cond_stage_model && !cond_stage_model->alloc_params_buffer()) {
             LOG_ERROR("Conditioner model params buffer allocation failed");
             ggml_free(ctx);
             return false;

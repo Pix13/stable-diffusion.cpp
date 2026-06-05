@@ -121,6 +121,13 @@ public:
     virtual void set_stream_layers_enabled(bool enabled) {}
     virtual void set_flash_attention_enabled(bool enabled) = 0;
     virtual void set_weight_adapter(const std::shared_ptr<WeightAdapter>& adapter) {}
+    // NVMe weight-streaming hooks (forwarded to the internal runner by subclasses
+    // that support it; default no-ops / normal allocation otherwise).
+    virtual bool supports_nvme_stream() const { return false; }
+    virtual void set_weight_index(std::shared_ptr<ModelWeightIndex> index) {}
+    virtual void set_weight_payload_source(std::unique_ptr<WeightPayloadSource> source) {}
+    virtual void set_nvme_stream_mode(bool on) {}
+    virtual bool alloc_params_index_only() { return alloc_params_buffer(); }
     virtual std::tuple<SDCondition, std::vector<bool>> get_learned_condition_with_trigger(int n_threads,
                                                                                           const ConditionerParams& conditioner_params) {
         GGML_ABORT("Not implemented yet!");
@@ -1816,6 +1823,20 @@ struct LLMEmbedder : public Conditioner {
         if (llm) {
             llm->set_weight_adapter(adapter);
         }
+    }
+
+    bool supports_nvme_stream() const override { return true; }
+    void set_weight_index(std::shared_ptr<ModelWeightIndex> index) override {
+        llm->set_weight_index(std::move(index));
+    }
+    void set_weight_payload_source(std::unique_ptr<WeightPayloadSource> source) override {
+        llm->set_weight_payload_source(std::move(source));
+    }
+    void set_nvme_stream_mode(bool on) override {
+        llm->set_nvme_stream_mode(on);
+    }
+    bool alloc_params_index_only() override {
+        return llm->alloc_params_index_only();
     }
 
     std::tuple<std::vector<int>, std::vector<float>, std::vector<float>> tokenize(std::string text,
