@@ -3075,6 +3075,10 @@ public:
             ggml_backend_buffer_free(params_buffer);
             params_buffer = nullptr;
         }
+        if (index_buffer_ != nullptr) {
+            ggml_backend_buffer_free(index_buffer_);
+            index_buffer_ = nullptr;
+        }
     }
 
     size_t get_params_buffer_size() {

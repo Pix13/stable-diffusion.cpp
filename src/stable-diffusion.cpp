@@ -793,8 +793,12 @@ public:
                 cond_stage_model->get_param_tensors(te_tensors);
                 auto te_index = build_weight_index(model_loader, te_tensors, 4096);
                 te_index->log_direct_coverage();
-                if (strict_direct_weights && !te_index->all_direct_streamable()) {
-                    LOG_ERROR("strict direct weights: not all LLM tensors are streamable");
+                // In nvme mode every streamed param must be direct-streamable: a
+                // skeleton tensor that needs host conversion has no payload and
+                // would fail mid-generation. Fail at load instead.
+                if (!te_index->all_direct_streamable()) {
+                    LOG_ERROR("nvme stream: not all LLM tensors are direct-streamable "
+                              "(would need host-side conversion); cannot stream from NVMe");
                     return false;
                 }
                 auto source = create_weight_payload_source(SAFE_STR(sd_ctx_params->llm_path), strict_direct_weights);
@@ -823,8 +827,12 @@ public:
                 diffusion_model->get_param_tensors(dm_tensors);
                 auto dm_index = build_weight_index(model_loader, dm_tensors, 4096);
                 dm_index->log_direct_coverage();
-                if (strict_direct_weights && !dm_index->all_direct_streamable()) {
-                    LOG_ERROR("strict direct weights: not all diffusion tensors are streamable");
+                // In nvme mode every streamed param must be direct-streamable: a
+                // skeleton tensor that needs host conversion has no payload and
+                // would fail mid-generation. Fail at load instead.
+                if (!dm_index->all_direct_streamable()) {
+                    LOG_ERROR("nvme stream: not all diffusion tensors are direct-streamable "
+                              "(would need host-side conversion); cannot stream from NVMe");
                     return false;
                 }
                 const std::string dm_path =

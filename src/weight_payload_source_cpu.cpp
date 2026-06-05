@@ -22,7 +22,7 @@ public:
 
     bool open() override {
         fd_ = ::open(source_path_.c_str(), O_RDONLY | O_DIRECT);
-        if (fd_ >= 0) { direct_ = true; return true; }
+        if (fd_ >= 0) { return true; }
         fd_ = ::open(source_path_.c_str(), O_RDONLY);
         if (fd_ < 0) {
             fprintf(stderr, "NvmeStagedWeightSource: cannot open '%s': %s\n",
@@ -84,7 +84,6 @@ private:
     }
 
     int      fd_     = -1;
-    bool     direct_ = false;
     uint8_t* buf_    = nullptr;
     size_t   cap_    = 0;
 };
