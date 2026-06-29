@@ -17,6 +17,12 @@ struct ArgOptions;
 struct SDContextParams;
 struct AsyncJobManager;
 
+struct DefaultLoraConfig {
+    std::string path;
+    float multiplier = 1.0f;
+    bool is_high_noise = false;
+};
+
 struct SDSvrParams {
     std::string listen_ip = "127.0.0.1";
     int listen_port       = 1234;
@@ -24,6 +30,7 @@ struct SDSvrParams {
     bool normal_exit = false;
     bool verbose     = false;
     bool color       = false;
+    std::vector<DefaultLoraConfig> default_loras;
 
     ArgOptions get_options();
     bool validate();
@@ -98,3 +105,4 @@ void refresh_lora_cache(ServerRuntime& rt);
 std::string get_lora_full_path(ServerRuntime& rt, const std::string& path);
 void refresh_upscaler_cache(ServerRuntime& rt);
 int64_t unix_timestamp_now();
+void inject_default_loras(json& body_json, const std::vector<DefaultLoraConfig>& default_loras);

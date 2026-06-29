@@ -352,7 +352,9 @@ static bool parse_img_gen_request(const json& body,
     request.gen_params = *runtime.default_gen_params;
 
     refresh_lora_cache(runtime);
-    if (!request.gen_params.from_json_str(body.dump(), [&](const std::string& path) {
+    json body_json = body;
+    inject_default_loras(body_json, runtime.svr_params->default_loras);
+    if (!request.gen_params.from_json_str(body_json.dump(), [&](const std::string& path) {
             return get_lora_full_path(runtime, path);
         })) {
         error_message = "invalid generation parameters";
@@ -379,7 +381,9 @@ static bool parse_vid_gen_request(const json& body,
     request.gen_params = *runtime.default_gen_params;
 
     refresh_lora_cache(runtime);
-    if (!request.gen_params.from_json_str(body.dump(), [&](const std::string& path) {
+    json body_json = body;
+    inject_default_loras(body_json, runtime.svr_params->default_loras);
+    if (!request.gen_params.from_json_str(body_json.dump(), [&](const std::string& path) {
             return get_lora_full_path(runtime, path);
         })) {
         error_message = "invalid generation parameters";

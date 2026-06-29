@@ -211,6 +211,57 @@ ArgOptions SDSvrParams::get_options() {
 
     options.manual_options = {
         {"-h", "--help", "show this help message and exit", on_help_arg},
+        {"", "--default-lora", "set default LoRA (format: path[:multiplier]), repeatable",
+         [&](int argc, const char** argv, int index, bool& valid) {
+             if (index + 1 >= argc) {
+                 LOG_ERROR("error: --default-lora requires an argument");
+                 valid = false;
+                 return -1;
+             }
+             std::string arg = argv[index + 1];
+             if (arg.empty()) {
+                 LOG_ERROR("error: --default-lora path is empty");
+                 valid = false;
+                 return -1;
+             }
+
+             DefaultLoraConfig config;
+             float multiplier = 1.0f;
+             std::string path = arg;
+
+             // Parse multiplier from the last colon, handling Windows paths like C:\path:multiplier
+             // Only treat as multiplier if the part after the last colon is a valid float
+             size_t last_colon = path.rfind(':');
+             if (last_colon != std::string::npos) {
+                 std::string potential_mult = path.substr(last_colon + 1);
+                 // Check if potential_mult is a valid float
+                 try {
+                     size_t pos = 0;
+                     std::stof(potential_mult, &pos);
+                     // Ensure the entire string was consumed
+                     if (pos == potential_mult.length()) {
+                         // Valid multiplier found
+                         multiplier = std::stof(potential_mult);
+                         path = path.substr(0, last_colon);
+                     }
+                 } catch (...) {
+                     // Not a valid float, treat entire arg as path
+                     
+                 }
+             }
+
+             if (path.empty()) {
+                 LOG_ERROR("error: --default-lora path cannot be empty: %s", arg.c_str());
+                 valid = false;
+                 return -1;
+             }
+
+             config.path = path;
+             config.multiplier = multiplier;
+             config.is_high_noise = false;
+             this->default_loras.push_back(config);
+             return index + 2;
+         }},
     };
     return options;
 }
@@ -245,8 +296,21 @@ std::string SDSvrParams::to_string() const {
     oss << "SDSvrParams {\n"
         << "  listen_ip: " << listen_ip << ",\n"
         << "  listen_port: \"" << listen_port << "\",\n"
-        << "  serve_html_path: \"" << serve_html_path << "\",\n"
-        << "}";
+        << "  serve_html_path: \"" << serve_html_path << "\",\n";
+    if (!default_loras.empty()) {
+        oss << "  default_loras: [\n";
+        for (size_t i = 0; i < default_loras.size(); ++i) {
+            oss << "    {path: \"" << default_loras[i].path
+                << "\", multiplier: " << default_loras[i].multiplier
+                << ", is_high_noise: " << (default_loras[i].is_high_noise ? "true" : "false") << "}";
+            if (i + 1 < default_loras.size()) {
+                oss << ",";
+            }
+            oss << "\n";
+        }
+        oss << "  ],\n";
+    }
+    oss << "}";
     return oss.str();
 }
 
@@ -330,4 +394,25 @@ int64_t unix_timestamp_now() {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+void inject_default_loras(json& body_json, const std::vector<DefaultLoraConfig>& default_loras) {
+    if (default_loras.empty()) {
+        return;
+    }
+
+    bool has_lora = body_json.contains("lora") && !body_json["lora"].is_null();
+    if (has_lora) {
+        return;
+    }
+
+    json lora_array = json::array();
+    for (const auto& lora : default_loras) {
+        lora_array.push_back({
+            {"path", lora.path},
+            {"multiplier", lora.multiplier},
+            {"is_high_noise", lora.is_high_noise}
+        });
+    }
+    body_json["lora"] = lora_array;
 }
