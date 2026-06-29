@@ -17,6 +17,27 @@ Global LoRA rule:
 - `<lora:...>` prompt syntax is intentionally unsupported in `OpenAI API`, `sdapi`, and `sdcpp API`.
 - LoRA must be passed through structured API fields when the API supports it.
 
+## Default LoRA
+
+The server supports configuring default LoRAs via the `--default-lora` CLI option. These LoRAs are automatically injected into generation requests that do not explicitly provide a `lora` field.
+
+Format: `--default-lora <path[:multiplier]>`
+
+Priority rules:
+
+- Request payload `lora` takes full priority over server defaults
+- If `lora` is absent or `null`, server defaults are applied
+- If `lora: []`, it is treated as an explicit override (no LoRAs applied)
+- `lora: null` is treated as absent (server defaults are applied)
+
+Example:
+
+```bash
+./bin/sd-server --default-lora my_lora.safetensors:0.8 --default-lora another.safetensors:1.2
+```
+
+This feature applies to all API families (`sdcpp`, `sdapi`, `OpenAI`) that support LoRA.
+
 ## Overview
 
 ### OpenAI API

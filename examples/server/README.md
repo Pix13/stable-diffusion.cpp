@@ -117,6 +117,30 @@ In this case, the server will load and serve the specified `index.html` file ins
 * using a custom UI
 * avoiding rebuilding the binary after frontend modifications
 
+# Default LoRA
+
+You can configure one or more default LoRAs via the command line. These LoRAs are automatically applied to all generation requests that do not explicitly provide a `lora` field.
+
+```bash
+./bin/sd-server \
+  --diffusion-model ./models/diffusion_models/z_image_turbo_bf16.safetensors \
+  --lora-model-dir ./models/loras \
+  --default-lora my_lora.safetensors:0.8 \
+  --default-lora another_lora.safetensors:1.2
+```
+
+Format: `--default-lora <path[:multiplier]>`
+
+- `path` is the LoRA file path (relative to `--lora-model-dir` or absolute)
+- `multiplier` is optional (defaults to `1.0`)
+- The option can be repeated to apply multiple LoRAs
+
+Priority rules:
+
+- If the request payload contains a `lora` field, it takes full priority (server defaults are ignored)
+- If the request payload has no `lora` field or `lora: null`, the server defaults are applied
+- If the request payload has `lora: []`, it is treated as an explicit override (no LoRAs applied)
+
 # Usage
 
 For detailed command-line arguments, run:
