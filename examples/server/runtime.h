@@ -17,6 +17,11 @@ struct ArgOptions;
 struct SDContextParams;
 struct AsyncJobManager;
 
+struct DefaultLoraAdapter {
+    std::string path;
+    float strength;
+};
+
 struct SDSvrParams {
     std::string listen_ip = "127.0.0.1";
     int listen_port       = 1234;
@@ -24,6 +29,7 @@ struct SDSvrParams {
     bool normal_exit = false;
     bool verbose     = false;
     bool color       = false;
+    std::vector<DefaultLoraAdapter> default_loras;
 
     ArgOptions get_options();
     bool validate();
@@ -96,5 +102,6 @@ bool runtime_supports_generation_mode(const ServerRuntime& runtime, SDMode mode)
 std::string unsupported_generation_mode_error(SDMode mode);
 void refresh_lora_cache(ServerRuntime& rt);
 std::string get_lora_full_path(ServerRuntime& rt, const std::string& path);
+void apply_default_loras(ServerRuntime& rt, SDGenerationParams& gen_params, bool request_provided_loras);
 void refresh_upscaler_cache(ServerRuntime& rt);
 int64_t unix_timestamp_now();

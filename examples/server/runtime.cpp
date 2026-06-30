@@ -209,8 +209,90 @@ ArgOptions SDSvrParams::get_options() {
         return -1;
     };
 
+    auto on_load_lora = [&](int argc, const char** argv, int index, bool& valid) {
+        if (index + 1 >= argc) {
+            LOG_ERROR("error: --load-lora requires a value");
+            valid = false;
+            return -1;
+        }
+        std::string spec = argv[index + 1];
+        // Trim leading/trailing whitespace
+        size_t start = spec.find_first_not_of(" \t\r\n");
+        size_t end   = spec.find_last_not_of(" \t\r\n");
+        if (start == std::string::npos) {
+            LOG_ERROR("error: --load-lora: empty specification");
+            valid = false;
+            return -1;
+        }
+        spec = spec.substr(start, end - start + 1);
+
+        // Split on semicolons
+        std::vector<std::string> entries;
+        std::stringstream ss(spec);
+        std::string token;
+        while (std::getline(ss, token, ';')) {
+            // Trim whitespace
+            size_t s = token.find_first_not_of(" \t\r\n");
+            size_t e = token.find_last_not_of(" \t\r\n");
+            if (s == std::string::npos) {
+                continue; // skip empty entries
+            }
+            token = token.substr(s, e - s + 1);
+            if (!token.empty()) {
+                entries.push_back(token);
+            }
+        }
+
+        for (const auto& entry : entries) {
+            // Split on the last colon
+            auto sep = entry.rfind(':');
+            if (sep == std::string::npos) {
+                LOG_ERROR("error: --load-lora: missing ':' separator in '%s'", entry.c_str());
+                valid = false;
+                return -1;
+            }
+            std::string path = entry.substr(0, sep);
+            std::string strength_str = entry.substr(sep + 1);
+            // Trim
+            size_t ps = path.find_first_not_of(" \t\r\n");
+            size_t pe = path.find_last_not_of(" \t\r\n");
+            if (ps == std::string::npos) {
+                LOG_ERROR("error: --load-lora: empty LoRA path in '%s'", entry.c_str());
+                valid = false;
+                return -1;
+            }
+            path = path.substr(ps, pe - ps + 1);
+            size_t ss2 = strength_str.find_first_not_of(" \t\r\n");
+            size_t se2 = strength_str.find_last_not_of(" \t\r\n");
+            if (ss2 == std::string::npos) {
+                LOG_ERROR("error: --load-lora: empty strength in '%s'", entry.c_str());
+                valid = false;
+                return -1;
+            }
+            strength_str = strength_str.substr(ss2, se2 - ss2 + 1);
+
+            float strength;
+            try {
+                strength = std::stof(strength_str);
+                if (!std::isfinite(strength)) {
+                    LOG_ERROR("error: --load-lora: invalid strength '%s' in '%s'", strength_str.c_str(), entry.c_str());
+                    valid = false;
+                    return -1;
+                }
+            } catch (...) {
+                LOG_ERROR("error: --load-lora: invalid strength '%s' in '%s'", strength_str.c_str(), entry.c_str());
+                valid = false;
+                return -1;
+            }
+
+            default_loras.push_back({path, strength});
+        }
+        return 1; // skip next arg
+    };
+
     options.manual_options = {
         {"-h", "--help", "show this help message and exit", on_help_arg},
+        {"", "--load-lora", "Default LoRA adapters to apply to server requests when the request payload does not provide LoRAs. Syntax: --load-lora path:strength[;path:strength...]", on_load_lora},
     };
     return options;
 }
@@ -245,8 +327,14 @@ std::string SDSvrParams::to_string() const {
     oss << "SDSvrParams {\n"
         << "  listen_ip: " << listen_ip << ",\n"
         << "  listen_port: \"" << listen_port << "\",\n"
-        << "  serve_html_path: \"" << serve_html_path << "\",\n"
-        << "}";
+        << "  serve_html_path: \"" << serve_html_path << "\",\n";
+    if (!default_loras.empty()) {
+        for (size_t i = 0; i < default_loras.size(); ++i) {
+            oss << "  default_lora[" << i << "]: path='" << default_loras[i].path
+                << "', strength=" << default_loras[i].strength << "\n";
+        }
+    }
+    oss << "}";
     return oss.str();
 }
 
@@ -330,4 +418,22 @@ int64_t unix_timestamp_now() {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+void apply_default_loras(ServerRuntime& rt, SDGenerationParams& gen_params, bool request_provided_loras) {
+    if (rt.svr_params->default_loras.empty()) {
+        return;
+    }
+    if (request_provided_loras) {
+        return;
+    }
+    for (const auto& lora : rt.svr_params->default_loras) {
+        std::string fullpath = fs::path(lora.path).is_absolute()
+                                    ? lora.path
+                                    : get_lora_full_path(rt, lora.path);
+        if (fullpath.empty()) {
+            fullpath = lora.path;
+        }
+        gen_params.lora_map[fullpath] += lora.strength;
+    }
 }
