@@ -187,6 +187,10 @@ static bool build_sdapi_img_gen_request(const json& j,
                 request.gen_params.lora_map[fullpath] += multiplier;
             }
         }
+        // Request explicitly provided a LoRA list (possibly empty) — do not apply defaults
+    } else {
+        // Request did not provide a LoRA list — apply server defaults
+        apply_default_loras(runtime, request.gen_params, false);
     }
 
     if (img2img) {

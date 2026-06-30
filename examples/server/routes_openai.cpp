@@ -69,6 +69,9 @@ static bool build_openai_generation_request(const httplib::Request& req,
         return false;
     }
 
+    // Apply default LoRAs when the request did not provide any
+    apply_default_loras(runtime, request.gen_params, false);
+
     // Intentionally disable prompt-embedded LoRA tag parsing for server APIs.
     if (!request.gen_params.resolve_and_validate(IMG_GEN, "", runtime.ctx_params->hires_upscalers_dir, true)) {
         error_message = "invalid params";
@@ -210,6 +213,9 @@ static bool build_openai_edit_request(const httplib::Request& req,
         error_message = "invalid sd_cpp_extra_args";
         return false;
     }
+
+    // Apply default LoRAs when the request did not provide any
+    apply_default_loras(runtime, request.gen_params, false);
 
     // Intentionally disable prompt-embedded LoRA tag parsing for server APIs.
     if (!request.gen_params.resolve_and_validate(IMG_GEN, "", runtime.ctx_params->hires_upscalers_dir, true)) {

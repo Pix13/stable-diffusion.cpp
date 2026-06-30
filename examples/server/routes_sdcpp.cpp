@@ -359,6 +359,10 @@ static bool parse_img_gen_request(const json& body,
         return false;
     }
 
+    if (!body.contains("lora")) {
+        apply_default_loras(runtime, request.gen_params, false);
+    }
+
     std::string output_format = body.value("output_format", "png");
     int output_compression    = body.value("output_compression", 100);
     if (!assign_output_options(request, output_format, output_compression, true, error_message)) {
@@ -384,6 +388,10 @@ static bool parse_vid_gen_request(const json& body,
         })) {
         error_message = "invalid generation parameters";
         return false;
+    }
+
+    if (!body.contains("lora")) {
+        apply_default_loras(runtime, request.gen_params, false);
     }
 
     std::string output_format = body.value("output_format", "webm");
