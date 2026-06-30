@@ -409,6 +409,7 @@ void apply_default_loras(ServerRuntime& runtime, SDGenerationParams& gen_params)
     for (const auto& lora : runtime.svr_params->default_loras) {
         std::string fullpath = get_lora_full_path(runtime, lora.path);
         if (fullpath.empty()) {
+            LOG_WARN("default lora path not resolved: %s", lora.path.c_str());
             continue;
         }
         if (lora.is_high_noise) {
