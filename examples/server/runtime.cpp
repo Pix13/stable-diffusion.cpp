@@ -401,7 +401,8 @@ void inject_default_loras(json& body_json, const std::vector<DefaultLoraConfig>&
         return;
     }
 
-    bool has_lora = body_json.contains("lora") && !body_json["lora"].is_null();
+    bool has_lora = body_json.contains("lora") && !body_json["lora"].is_null() &&
+                    body_json["lora"].is_array() && !body_json["lora"].empty();
     if (has_lora) {
         return;
     }
