@@ -105,4 +105,4 @@ void refresh_lora_cache(ServerRuntime& rt);
 std::string get_lora_full_path(ServerRuntime& rt, const std::string& path);
 void refresh_upscaler_cache(ServerRuntime& rt);
 int64_t unix_timestamp_now();
-void inject_default_loras(json& body_json, const std::vector<DefaultLoraConfig>& default_loras);
+void apply_default_loras(ServerRuntime& runtime, SDGenerationParams& gen_params);

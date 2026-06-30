@@ -157,23 +157,8 @@ static bool build_sdapi_img_gen_request(const json& j,
         request.gen_params.sample_params.scheduler = scheduler;
     }
 
-    // Handle LoRA: use request-provided LoRA if present, otherwise inject server defaults
-    bool request_has_lora = j.contains("lora") && !j["lora"].is_null();
-    if (!request_has_lora && !runtime.svr_params->default_loras.empty()) {
-        // Inject default LoRAs from CLI
-        for (const auto& lora : runtime.svr_params->default_loras) {
-            std::string fullpath = get_lora_full_path(runtime, lora.path);
-            if (fullpath.empty()) {
-                error_message = "invalid default lora path: " + lora.path;
-                return false;
-            }
-            if (lora.is_high_noise) {
-                request.gen_params.high_noise_lora_map[fullpath] += lora.multiplier;
-            } else {
-                request.gen_params.lora_map[fullpath] += lora.multiplier;
-            }
-        }
-    } else if (j.contains("lora") && j["lora"].is_array()) {
+    // Handle LoRA: use request-provided LoRA if present, otherwise apply server defaults
+    if (j.contains("lora") && j["lora"].is_array()) {
         request.gen_params.lora_map.clear();
         request.gen_params.high_noise_lora_map.clear();
 

@@ -352,14 +352,14 @@ static bool parse_img_gen_request(const json& body,
     request.gen_params = *runtime.default_gen_params;
 
     refresh_lora_cache(runtime);
-    json body_json = body;
-    inject_default_loras(body_json, runtime.svr_params->default_loras);
-    if (!request.gen_params.from_json_str(body_json.dump(), [&](const std::string& path) {
+    if (!request.gen_params.from_json_str(body.dump(), [&](const std::string& path) {
             return get_lora_full_path(runtime, path);
         })) {
         error_message = "invalid generation parameters";
         return false;
     }
+
+    apply_default_loras(runtime, request.gen_params);
 
     std::string output_format = body.value("output_format", "png");
     int output_compression    = body.value("output_compression", 100);
@@ -381,14 +381,14 @@ static bool parse_vid_gen_request(const json& body,
     request.gen_params = *runtime.default_gen_params;
 
     refresh_lora_cache(runtime);
-    json body_json = body;
-    inject_default_loras(body_json, runtime.svr_params->default_loras);
-    if (!request.gen_params.from_json_str(body_json.dump(), [&](const std::string& path) {
+    if (!request.gen_params.from_json_str(body.dump(), [&](const std::string& path) {
             return get_lora_full_path(runtime, path);
         })) {
         error_message = "invalid generation parameters";
         return false;
     }
+
+    apply_default_loras(runtime, request.gen_params);
 
     std::string output_format = body.value("output_format", "webm");
     int output_compression    = body.value("output_compression", 100);

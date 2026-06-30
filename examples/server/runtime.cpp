@@ -396,24 +396,25 @@ int64_t unix_timestamp_now() {
         .count();
 }
 
-void inject_default_loras(json& body_json, const std::vector<DefaultLoraConfig>& default_loras) {
-    if (default_loras.empty()) {
+void apply_default_loras(ServerRuntime& runtime, SDGenerationParams& gen_params) {
+    if (runtime.svr_params->default_loras.empty()) {
         return;
     }
 
-    bool has_lora = body_json.contains("lora") && !body_json["lora"].is_null() &&
-                    body_json["lora"].is_array() && !body_json["lora"].empty();
-    if (has_lora) {
+    // Only apply defaults if gen_params has no LoRAs set
+    if (!gen_params.lora_map.empty() || !gen_params.high_noise_lora_map.empty()) {
         return;
     }
 
-    json lora_array = json::array();
-    for (const auto& lora : default_loras) {
-        lora_array.push_back({
-            {"path", lora.path},
-            {"multiplier", lora.multiplier},
-            {"is_high_noise", lora.is_high_noise}
-        });
+    for (const auto& lora : runtime.svr_params->default_loras) {
+        std::string fullpath = get_lora_full_path(runtime, lora.path);
+        if (fullpath.empty()) {
+            continue;
+        }
+        if (lora.is_high_noise) {
+            gen_params.high_noise_lora_map[fullpath] += lora.multiplier;
+        } else {
+            gen_params.lora_map[fullpath] += lora.multiplier;
+        }
     }
-    body_json["lora"] = lora_array;
 }
